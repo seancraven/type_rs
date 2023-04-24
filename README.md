@@ -1,20 +1,13 @@
+# type_rs
+Not to be confused with types this is a small command line typing app that I am working on as a side project. 
+I got sick and tired of how slow monkeytype was. I also would prefer to type in sentences than random words. 
+However quotes seem to general, I think that there is space to have a generative model end point for the typing.
 # Plan
 
-Simple command line typing app, start off very basic. Just pass in a file and type it, from the cmd line.
+- [x] Simple command line typing app, start off very basic. Just pass in a file and type it, from the cmd line.
 
 
-First job is to render the text, onto the console.
 
 
-# Implementing a Sliding Window Veiw Over a file
 
 
-```Rust
-impl<'a> IntoIter FileLines<'a> {
-
-    fn into_iter(self, n:usize) -> Iterator{
-    // Make a sliding window view of the file that can then be displayed. 
-    
-    }
-  }
-```

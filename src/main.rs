@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-fn main() -> Result<(), io::Error> {
+fn main() -> Result<(), LineError> {
     let args = Args::parse();
     let term = Term::stdout();
     let file = File::open(args.file_name)?;
@@ -25,9 +25,23 @@ fn main() -> Result<(), io::Error> {
             .iter()
             .skip(1)
             .for_each(|line| term.write_line(line).unwrap_or_default());
-        let (line_errors, line_total) = type_line(&line_to_type, &term, args.lines)?;
-        errors += line_errors;
-        total += line_total;
+        let line_resp = type_line(&line_to_type, &term, args.lines);
+        match line_resp {
+            Ok((e, t)) => {
+                errors += e;
+                total += t;
+            }
+            Err(le) => match le {
+                LineError::Io(io) => {
+                    return Err(LineError::Io(io));
+                }
+                LineError::Esc(e, t) => {
+                    errors += e;
+                    total += t;
+                    break;
+                }
+            },
+        }
     }
     if total != 0 {
         term.clear_screen()?;
@@ -39,9 +53,22 @@ fn main() -> Result<(), io::Error> {
     }
     return Ok(());
 }
+
+#[derive(Debug)]
+enum LineError {
+    Io(io::Error),
+    Esc(u64, u64),
+}
+impl From<io::Error> for LineError {
+    fn from(err: io::Error) -> LineError {
+        LineError::Io(err)
+    }
+}
 /// Function that lets you typle the current line to the terminal,
 /// returns the number of errors made and the total characters enterd.
-fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64), io::Error> {
+// I think this function might have been better looping over user inputs.
+//
+fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64), LineError> {
     let mut errors = 0;
     let mut total = 0;
     let mut char_iter = line.chars().skip(0);
@@ -56,6 +83,7 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
                 total += 1;
                 idx += 1;
             }
+            // Tab counts as 4 space characters.
             Input::Tab => {
                 errors += write_char(term, char, ' ')?;
                 total += 1;
@@ -81,6 +109,9 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
             Input::Enter => {
                 errors += 1;
                 total += 1
+            }
+            Input::Esc => {
+                return Err(LineError::Esc(errors, total));
             }
         }
     }
@@ -115,9 +146,12 @@ enum Input {
     Backspace,
     Tab,
     Enter,
+    Esc,
 }
-/// Valid entries are any character, space, backspace, tab, enter.
-///
+/// Valid entries are any character, space, backspace, tab, enter and esc.
+/// Function takes in a reference to the terminal and returns the
+/// key type and the number of invalid keystrokes made before entering
+/// a valid key.
 impl Input {
     fn is_valid(term: &Term) -> Result<(Input, u64), io::Error> {
         let mut invalid_keystrokes = 0;
@@ -128,6 +162,7 @@ impl Input {
                 Key::Backspace => Some(Input::Backspace),
                 Key::Tab => Some(Input::Tab),
                 Key::Enter => Some(Input::Enter),
+                Key::Escape => Some(Input::Esc),
                 _ => None,
             };
 

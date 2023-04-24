@@ -1,65 +1,145 @@
 use console::{style, Key, Term};
 use std::collections::LinkedList;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Lines, Write};
+use std::io::{self, BufRead, BufReader, Lines};
 use std::path::PathBuf;
-use std::thread;
-use std::time::Duration;
 
 use clap::Parser;
 
-fn main() {
+fn main() -> Result<(), io::Error> {
     let args = Args::parse();
-    let test_string = "Tring to see what I should be typin string";
     let term = Term::stdout();
-    let file = File::open(args.file_name).expect("Failed to open file");
-    term.write_line("Press any key to start")
-        .expect("Failed to write to terminal");
-    term.read_char().expect("Failed to read input");
+    let file = File::open(args.file_name)?;
+    // let file = File::open("./simple.txt")?;
+    term.write_line("Press any key to start")?;
+    term.read_key()?;
     let mut errors = 0;
-    for window in FileLinesGenerator::new(file, args.lines) {
-        term.clear_screen().expect("Failed to clear screen");
-        let line_to_type = window.iter().next().unwrap();
-        term.write_line(line_to_type)
-            .expect("Failed to write to terminal");
-        window.iter().skip(1).for_each(|line| {
-            term.write_line(line).expect("Failed to write to terminal");
-        });
-        errors += type_line(&line_to_type, &term, args.lines).expect("Failed to type line");
-    }
-    term.clear_screen().expect("Failed to clear screen");
-    term.write_line(&format!("You made {} errors", errors))
-        .expect("Failed to write to terminal");
-}
+    let mut total = 0;
+    let window_gen = FileLinesGenerator::new(file, args.lines).into_iter();
 
-fn type_line(line: &String, term: &Term, window_size: usize) -> Result<u64, io::Error> {
+    for window in window_gen {
+        term.clear_screen()?;
+        let line_to_type = window.iter().next().unwrap();
+        term.write_line(line_to_type)?;
+        window
+            .iter()
+            .skip(1)
+            .for_each(|line| term.write_line(line).unwrap_or_default());
+        let (line_errors, line_total) = type_line(&line_to_type, &term, args.lines)?;
+        errors += line_errors;
+        total += line_total;
+    }
+    if total != 0 {
+        term.clear_screen()?;
+        term.write_line(&format!("{} errors made.", errors))?;
+        term.write_line(&format!(
+            "{:.0}% Accuracy.",
+            ((1.0 - (errors as f64 / total as f64)) * 100.0).max(0.0)
+        ))?;
+    }
+    return Ok(());
+}
+/// Function that lets you typle the current line to the terminal,
+/// returns the number of errors made and the total characters enterd.
+fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64), io::Error> {
     let mut errors = 0;
+    let mut total = 0;
     let mut char_iter = line.chars().skip(0);
-    term.move_cursor_up(window_size)?;
+    term.move_cursor_up(window_size + 1)?;
     let mut idx = 0;
     while let Some(char) = char_iter.next() {
-        let user_char = match term.read_key()? {
-            Key::Char(c) => Some(c),
-            Key::Backspace => {
-                term.move_cursor_left(1)?;
-                char_iter = line.chars().skip(idx - 1);
-                None
+        let (user_input, n_err) = Input::is_valid(term)?;
+        errors += n_err;
+        match user_input {
+            Input::Char(c) => {
+                errors += write_char(term, char, c)?;
+                total += 1;
+                idx += 1;
             }
-            _ => None,
-        };
-        if let Some(user_char) = user_char {
-            if user_char == char {
-                term.write_str(&format!("{}", style(char).green()))?;
-            } else {
-                term.write_str(&format!("{}", style(user_char).red()))?;
+            Input::Tab => {
+                errors += write_char(term, char, ' ')?;
+                total += 1;
+                idx += 1;
+                for _ in 0..3 {
+                    if let Some(char) = char_iter.next() {
+                        errors += write_char(term, char, ' ')?;
+                        total += 1;
+                        idx += 1;
+                    } else {
+                        break;
+                    }
+                }
             }
-            idx += 1;
+            Input::Backspace => {
+                if idx > 0 {
+                    term.move_cursor_left(1)?;
+                    idx -= 1;
+                    total += 1;
+                    char_iter = line.chars().skip(idx);
+                }
+            }
+            Input::Enter => {
+                errors += 1;
+                total += 1
+            }
         }
     }
-    while term.read_key().unwrap() != Key::Enter {
-        errors += 1;
+    loop {
+        match term.read_key()? {
+            Key::Enter => {
+                break;
+            }
+            _ => {
+                errors += 1;
+            }
+        }
     }
-    return Ok(errors);
+    return Ok((errors, total));
+}
+/// Writes a character to the terminal color coded for correctness.
+/// Returns 1 if error, else 0
+fn write_char(term: &Term, target_char: char, user_char: char) -> Result<u64, io::Error> {
+    let mut error = 0;
+    if target_char == user_char {
+        term.write_str(&format!("{}", style(user_char).green()))?;
+    } else {
+        term.write_str(&format!("{}", style(target_char).red()))?;
+        error += 1
+    }
+    return Ok(error);
+}
+
+#[derive(Debug, PartialEq)]
+enum Input {
+    Char(char),
+    Backspace,
+    Tab,
+    Enter,
+}
+/// Valid entries are any character, space, backspace, tab, enter.
+///
+impl Input {
+    fn is_valid(term: &Term) -> Result<(Input, u64), io::Error> {
+        let mut invalid_keystrokes = 0;
+        let mut in_key = None;
+        while None == in_key {
+            in_key = match term.read_key()? {
+                Key::Char(c) => Some(Input::Char(c)),
+                Key::Backspace => Some(Input::Backspace),
+                Key::Tab => Some(Input::Tab),
+                Key::Enter => Some(Input::Enter),
+                _ => None,
+            };
+
+            invalid_keystrokes += 1;
+        }
+        invalid_keystrokes -= 1;
+        if let Some(in_key) = in_key {
+            return Ok((in_key, invalid_keystrokes));
+        } else {
+            return Err(io::Error::new(io::ErrorKind::Other, "Failed to read key"));
+        }
+    }
 }
 
 /// Generates a window of lines from a file.
@@ -82,6 +162,7 @@ impl FileLinesGenerator {
     fn new(file: File, window_size: usize) -> Self {
         let mut lines_iter = BufReader::new(file).lines();
         let mut current_window = LinkedList::new();
+        current_window.push_front("".to_string());
         for _ in 0..window_size {
             match lines_iter.next() {
                 Some(line) => {
@@ -115,6 +196,7 @@ impl Iterator for FileLinesGenerator {
                 }
             }
             None => {
+                println!("{:?}", self.current_window.clone());
                 if self.current_window.len() > 0 {
                     return Some(self.current_window.clone());
                 } else {
@@ -127,7 +209,7 @@ impl Iterator for FileLinesGenerator {
 
 #[derive(Parser, Debug)]
 struct Args {
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "simple.txt")]
     file_name: PathBuf,
 
     #[arg(short, long, default_value = "3")]

@@ -1,5 +1,7 @@
 use console::{style, Key, Term};
+use core::fmt;
 use std::collections::LinkedList;
+use std::error::Error;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines};
 use std::path::PathBuf;
@@ -62,6 +64,22 @@ enum LineError {
 impl From<io::Error> for LineError {
     fn from(err: io::Error) -> LineError {
         LineError::Io(err)
+    }
+}
+impl fmt::Display for LineError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LineError::Io(e) => e.fmt(f),
+            LineError::Esc(e, t) => write!(f, "Escape with\nErrors: {}\nTotal:{}", e, t),
+        }
+    }
+}
+impl Error for LineError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match *self {
+            LineError::Esc(_, _) => None,
+            LineError::Io(ref e) => Some(e),
+        }
     }
 }
 /// Function that lets you typle the current line to the terminal,

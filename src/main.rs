@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local, TimeZone};
 use console::{style, Key, Term};
 use core::fmt;
 use std::collections::LinkedList;
@@ -12,6 +13,7 @@ fn main() -> Result<(), LineError> {
     let args = Args::parse();
     let term = Term::stdout();
     let file = File::open(args.file_name)?;
+    let start_time = Local::now();
     // let file = File::open("./simple.txt")?;
     term.write_line("Press any key to start")?;
     term.read_key()?;
@@ -45,6 +47,8 @@ fn main() -> Result<(), LineError> {
             },
         }
     }
+    let duration = (Local::now() - start_time).num_seconds() as f64 / 60.0;
+
     if total != 0 {
         term.clear_screen()?;
         term.write_line(&format!("{} errors made.", errors))?;
@@ -52,14 +56,18 @@ fn main() -> Result<(), LineError> {
             "{:.0}% Accuracy.",
             ((1.0 - (errors as f64 / total as f64)) * 100.0).max(0.0)
         ))?;
+        term.write_line(&format!("{:.0} WPM", (total as f64 / (5.0 * duration))))?;
     }
     return Ok(());
 }
 
+/// Wrapper for io::Errror, and escape functionality.
+/// enables quick exit from typing. Raise this with the
+/// current data and handle this.
 #[derive(Debug)]
 enum LineError {
     Io(io::Error),
-    Esc(u64, u64),
+    Esc(u64, u64), //(errors, total)
 }
 impl From<io::Error> for LineError {
     fn from(err: io::Error) -> LineError {
@@ -84,6 +92,7 @@ impl Error for LineError {
 }
 /// Function that lets you typle the current line to the terminal,
 /// returns the number of errors made and the total characters enterd.
+/// If the Escape key is pressed returns a LineError::Escape(errors, total_characters enterd)
 // I think this function might have been better looping over user inputs.
 //
 fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64), LineError> {

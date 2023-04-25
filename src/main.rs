@@ -104,7 +104,23 @@ impl Error for LineError {
         }
     }
 }
+fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics, LineError> {
+    let mut errors;
+    let mut total_input_chars;
+    let mut line_iter = line.chars().skip(0);
 
+    loop {
+        let (user_input, invalid_keystrokes) = Input::is_valid(term)?;
+        errors += invalid_keystrokes;
+        todo!();
+        break;
+    }
+    return Ok(Analytics {
+        errors,
+        total_input_chars,
+        line_length: line.len() as u64 + 1,
+    });
+}
 /// Function that lets you typle the current line to the terminal,
 /// returns the number of errors made and the total characters enterd.
 /// If the Escape key is pressed returns a LineError::Escape(errors, total_characters enterd)

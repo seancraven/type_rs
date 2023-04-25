@@ -138,6 +138,7 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
             Key::Enter => {
                 break;
             }
+            Key::Escape => return Err(LineError::Esc(errors, total)),
             _ => {
                 errors += 1;
             }

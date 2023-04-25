@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local, TimeZone};
+use chrono::Local;
 use console::{style, Key, Term};
 use core::fmt;
 use std::collections::LinkedList;
@@ -19,6 +19,7 @@ fn main() -> Result<(), LineError> {
     term.read_key()?;
     let mut errors = 0;
     let mut total = 0;
+    let mut len = 0;
     let window_gen = FileLinesGenerator::new(file, args.lines).into_iter();
 
     for window in window_gen {
@@ -31,23 +32,25 @@ fn main() -> Result<(), LineError> {
             .for_each(|line| term.write_line(line).unwrap_or_default());
         let line_resp = type_line(&line_to_type, &term, args.lines);
         match line_resp {
-            Ok((e, t)) => {
+            Ok((e, t, l)) => {
                 errors += e;
                 total += t;
+                len += l
             }
             Err(le) => match le {
                 LineError::Io(io) => {
                     return Err(LineError::Io(io));
                 }
-                LineError::Esc(e, t) => {
+                LineError::Esc(e, t, l) => {
                     errors += e;
                     total += t;
+                    len += l;
                     break;
                 }
             },
         }
     }
-    let duration = (Local::now() - start_time).num_seconds() as f64 / 60.0;
+    let duration = (Local::now() - start_time).num_seconds() as f64 / 60.0; // time in minuites
 
     if total != 0 {
         term.clear_screen()?;
@@ -56,7 +59,8 @@ fn main() -> Result<(), LineError> {
             "{:.0}% Accuracy.",
             ((1.0 - (errors as f64 / total as f64)) * 100.0).max(0.0)
         ))?;
-        term.write_line(&format!("{:.0} WPM", (total as f64 / (5.0 * duration))))?;
+        term.write_line(&format!("{:.0} WPM.", (len as f64 / (5.0 * duration))))?;
+        term.write_line(&format!("{} excess characters.", total as i64 - len as i64))?;
     }
     return Ok(());
 }
@@ -67,7 +71,7 @@ fn main() -> Result<(), LineError> {
 #[derive(Debug)]
 enum LineError {
     Io(io::Error),
-    Esc(u64, u64), //(errors, total)
+    Esc(u64, u64, u64), //(errors, total_entered, string_len)
 }
 impl From<io::Error> for LineError {
     fn from(err: io::Error) -> LineError {
@@ -78,14 +82,18 @@ impl fmt::Display for LineError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LineError::Io(e) => e.fmt(f),
-            LineError::Esc(e, t) => write!(f, "Escape with\nErrors: {}\nTotal:{}", e, t),
+            LineError::Esc(e, t, l) => write!(
+                f,
+                "Escape with\nErrors: {}\nTotal:{}\nString Lenght{}",
+                e, t, l
+            ),
         }
     }
 }
 impl Error for LineError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match *self {
-            LineError::Esc(_, _) => None,
+            LineError::Esc(_, _, _) => None,
             LineError::Io(ref e) => Some(e),
         }
     }
@@ -95,7 +103,7 @@ impl Error for LineError {
 /// If the Escape key is pressed returns a LineError::Escape(errors, total_characters enterd)
 // I think this function might have been better looping over user inputs.
 //
-fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64), LineError> {
+fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64, u64), LineError> {
     let mut errors = 0;
     let mut total = 0;
     let mut char_iter = line.chars().skip(0);
@@ -138,7 +146,7 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
                 total += 1
             }
             Input::Esc => {
-                return Err(LineError::Esc(errors, total));
+                return Err(LineError::Esc(errors, total, idx as u64));
             }
         }
     }
@@ -147,13 +155,13 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
             Key::Enter => {
                 break;
             }
-            Key::Escape => return Err(LineError::Esc(errors, total)),
+            Key::Escape => return Err(LineError::Esc(errors, total, idx as u64)),
             _ => {
                 errors += 1;
             }
         }
     }
-    return Ok((errors, total));
+    return Ok((errors, total, idx as u64 + 1));
 }
 /// Writes a character to the terminal color coded for correctness.
 /// Returns 1 if error, else 0

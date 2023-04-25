@@ -32,19 +32,19 @@ fn main() -> Result<(), LineError> {
             .for_each(|line| term.write_line(line).unwrap_or_default());
         let line_resp = type_line(&line_to_type, &term, args.lines);
         match line_resp {
-            Ok((e, t, l)) => {
-                errors += e;
-                total += t;
-                len += l
+            Ok(a) => {
+                errors += a.errors;
+                total += a.total_input_chars;
+                len += a.line_length;
             }
             Err(le) => match le {
                 LineError::Io(io) => {
                     return Err(LineError::Io(io));
                 }
-                LineError::Esc(e, t, l) => {
-                    errors += e;
-                    total += t;
-                    len += l;
+                LineError::Esc(a) => {
+                    errors += a.errors;
+                    total += a.total_input_chars;
+                    len += a.line_length;
                     break;
                 }
             },
@@ -64,6 +64,12 @@ fn main() -> Result<(), LineError> {
     }
     return Ok(());
 }
+#[derive(Debug)]
+struct Analytics {
+    errors: u64,
+    total_input_chars: u64,
+    line_length: u64,
+}
 
 /// Wrapper for io::Errror, and escape functionality.
 /// enables quick exit from typing. Raise this with the
@@ -71,7 +77,7 @@ fn main() -> Result<(), LineError> {
 #[derive(Debug)]
 enum LineError {
     Io(io::Error),
-    Esc(u64, u64, u64), //(errors, total_entered, string_len)
+    Esc(Analytics), //(errors, total_entered, string_len)
 }
 impl From<io::Error> for LineError {
     fn from(err: io::Error) -> LineError {
@@ -82,10 +88,10 @@ impl fmt::Display for LineError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LineError::Io(e) => e.fmt(f),
-            LineError::Esc(e, t, l) => write!(
+            LineError::Esc(a) => write!(
                 f,
                 "Escape with\nErrors: {}\nTotal:{}\nString Lenght{}",
-                e, t, l
+                a.errors, a.total_input_chars, a.line_length
             ),
         }
     }
@@ -93,17 +99,18 @@ impl fmt::Display for LineError {
 impl Error for LineError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match *self {
-            LineError::Esc(_, _, _) => None,
+            LineError::Esc(_) => None,
             LineError::Io(ref e) => Some(e),
         }
     }
 }
+
 /// Function that lets you typle the current line to the terminal,
 /// returns the number of errors made and the total characters enterd.
 /// If the Escape key is pressed returns a LineError::Escape(errors, total_characters enterd)
 // I think this function might have been better looping over user inputs.
 //
-fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64, u64), LineError> {
+fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics, LineError> {
     let mut errors = 0;
     let mut total = 0;
     let mut char_iter = line.chars().skip(0);
@@ -146,7 +153,11 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
                 total += 1
             }
             Input::Esc => {
-                return Err(LineError::Esc(errors, total, idx as u64));
+                return Err(LineError::Esc(Analytics {
+                    errors,
+                    total_input_chars: total,
+                    line_length: idx as u64,
+                }));
             }
         }
     }
@@ -155,13 +166,23 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<(u64, u64
             Key::Enter => {
                 break;
             }
-            Key::Escape => return Err(LineError::Esc(errors, total, idx as u64)),
+            Key::Escape => {
+                return Err(LineError::Esc(Analytics {
+                    errors,
+                    total_input_chars: total,
+                    line_length: idx as u64,
+                }))
+            }
             _ => {
                 errors += 1;
             }
         }
     }
-    return Ok((errors, total, idx as u64 + 1));
+    return Ok(Analytics {
+        errors,
+        total_input_chars: total,
+        line_length: idx as u64 + 1,
+    });
 }
 /// Writes a character to the terminal color coded for correctness.
 /// Returns 1 if error, else 0

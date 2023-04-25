@@ -1,11 +1,14 @@
 use chrono::Local;
 use console::{style, Key, Term};
 use core::fmt;
+use std::cell::RefCell;
 use std::collections::LinkedList;
 use std::error::Error;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines};
+use std::iter::Skip;
 use std::path::PathBuf;
+use std::str::Chars;
 
 use clap::Parser;
 
@@ -64,11 +67,20 @@ fn main() -> Result<(), LineError> {
     }
     return Ok(());
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Analytics {
     errors: u64,
     total_input_chars: u64,
     line_length: u64,
+}
+impl Analytics {
+    fn new(errors: u64, total_input_chars: u64, line_length: u64) -> Analytics {
+        Analytics {
+            errors,
+            total_input_chars,
+            line_length,
+        }
+    }
 }
 
 /// Wrapper for io::Errror, and escape functionality.
@@ -105,100 +117,81 @@ impl Error for LineError {
     }
 }
 fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics, LineError> {
-    let mut errors;
-    let mut total_input_chars;
+    term.move_cursor_up(window_size + 1)?;
     let mut line_iter = line.chars().skip(0);
+    let analytics = RefCell::new(Analytics::new(0, 0, 0));
 
     loop {
         let (user_input, invalid_keystrokes) = Input::is_valid(term)?;
-        errors += invalid_keystrokes;
-        todo!();
-        break;
-    }
-    return Ok(Analytics {
-        errors,
-        total_input_chars,
-        line_length: line.len() as u64 + 1,
-    });
-}
-/// Function that lets you typle the current line to the terminal,
-/// returns the number of errors made and the total characters enterd.
-/// If the Escape key is pressed returns a LineError::Escape(errors, total_characters enterd)
-// I think this function might have been better looping over user inputs.
-//
-fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics, LineError> {
-    let mut errors = 0;
-    let mut total = 0;
-    let mut char_iter = line.chars().skip(0);
-    term.move_cursor_up(window_size + 1)?;
-    let mut idx = 0;
-    while let Some(char) = char_iter.next() {
-        let (user_input, n_err) = Input::is_valid(term)?;
-        errors += n_err;
-        match user_input {
-            Input::Char(c) => {
-                errors += write_char(term, char, c)?;
-                total += 1;
-                idx += 1;
-            }
-            // Tab counts as 4 space characters.
-            Input::Tab => {
-                errors += write_char(term, char, ' ')?;
-                total += 1;
-                idx += 1;
-                for _ in 0..3 {
-                    if let Some(char) = char_iter.next() {
-                        errors += write_char(term, char, ' ')?;
-                        total += 1;
-                        idx += 1;
-                    } else {
-                        break;
+        analytics.borrow_mut().errors += invalid_keystrokes;
+        if let Some(target_char) = line_iter.next() {
+            // Record that the next item is seen.
+            // See what to do:
+            match user_input {
+                // Simple happy path.
+                Input::Char(c) => {
+                    analytics.borrow_mut().errors += write_char(term, target_char, c)?;
+                    analytics.borrow_mut().total_input_chars += 1;
+                    analytics.borrow_mut().line_length += 1;
+                }
+                // Tab counts as four sequential enters.
+                // First enter does not add to the line position as this
+                Input::Tab => {
+                    analytics.borrow_mut().errors += write_char(term, target_char, ' ')?;
+                    analytics.borrow_mut().total_input_chars += 1;
+                    analytics.borrow_mut().line_length += 1;
+                    for _ in 0..3 {
+                        if let Some(c) = line_iter.next() {
+                            analytics.borrow_mut().errors += write_char(term, c, ' ')?;
+                            analytics.borrow_mut().total_input_chars += 1;
+                            analytics.borrow_mut().line_length += 1;
+                        } else {
+                            break;
+                        }
                     }
                 }
-            }
-            Input::Backspace => {
-                if idx > 0 {
-                    term.move_cursor_left(1)?;
-                    idx -= 1;
-                    total += 1;
-                    char_iter = line.chars().skip(idx);
+                Input::Backspace => {
+                    line_iter = backspace(term, &analytics, line)?;
                 }
+                Input::Enter => {
+                    analytics.borrow_mut().errors += 1;
+                    analytics.borrow_mut().total_input_chars += 1;
+                }
+                Input::Esc => return Err(LineError::Esc(*analytics.borrow())),
             }
-            Input::Enter => {
-                errors += 1;
-                total += 1
-            }
-            Input::Esc => {
-                return Err(LineError::Esc(Analytics {
-                    errors,
-                    total_input_chars: total,
-                    line_length: idx as u64,
-                }));
-            }
-        }
-    }
-    loop {
-        match term.read_key()? {
-            Key::Enter => {
-                break;
-            }
-            Key::Escape => {
-                return Err(LineError::Esc(Analytics {
-                    errors,
-                    total_input_chars: total,
-                    line_length: idx as u64,
-                }))
-            }
-            _ => {
-                errors += 1;
+        } else {
+            // Handle an empty line.
+            match user_input {
+                Input::Enter => {
+                    break;
+                }
+                Input::Backspace => {
+                    line_iter = backspace(term, &analytics, line)?;
+                }
+                Input::Char(c) => analytics.borrow_mut().errors += write_char(term, ' ', c)?,
+                Input::Tab => analytics.borrow_mut().errors += 1,
+                Input::Esc => return Err(LineError::Esc(*analytics.borrow())),
             }
         }
     }
-    return Ok(Analytics {
-        errors,
-        total_input_chars: total,
-        line_length: idx as u64 + 1,
-    });
+    return Ok(*analytics.borrow());
+}
+/// Function to perform a backspace on the terminal.
+/// Moves the current position back one and increases the
+/// total input char.
+fn backspace<'a>(
+    term: &'a Term,
+    analytics: &RefCell<Analytics>,
+    line: &'a String,
+) -> Result<Skip<Chars<'a>>, io::Error> {
+    if analytics.borrow_mut().line_length > 0 {
+        term.move_cursor_left(1)?;
+        analytics.borrow_mut().line_length -= 1;
+        analytics.borrow_mut().total_input_chars += 1;
+    }
+    Ok(line
+        .chars()
+        .skip(analytics.borrow_mut().line_length as usize))
 }
 /// Writes a character to the terminal color coded for correctness.
 /// Returns 1 if error, else 0

@@ -6,7 +6,8 @@ However quotes seem to general, I think that there is space to have a generative
 
 - [x] Simple command line typing app, start off very basic. Just pass in a file and type it, from the cmd line.
 - [x] Escape handelling.
-- [ ] WPM
+- [x] WPM
+- [ ] BLOOM for text generation.
 - [ ] tracking progress.
 
 

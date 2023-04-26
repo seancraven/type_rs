@@ -10,8 +10,16 @@ class Bernoulli:
     def __init__(self, probs):
         self.probs = probs
 
-    def sample(self, size):
-        """Sample from a Bernoulli distribution."""
+    def sample(self, size: int) -> List[int]:
+        """
+        Fucntions that generates a list of Bernoulli random variables.
+
+        Arguments:
+            size: The number of Bernoulli random variables to generate.
+        Returns:
+            A list of Bernoulli random variables.
+        """
+
         uniform_random_vars = [random.random() for i in range(size)]
         return [1 if i < self.probs else 0 for i in uniform_random_vars]
 

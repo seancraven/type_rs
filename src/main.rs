@@ -26,14 +26,17 @@ fn main() -> Result<(), LineError> {
     let window_gen = FileLinesGenerator::new(file, args.lines).into_iter();
 
     for window in window_gen {
-        term.clear_screen()?;
         let line_to_type = window.iter().next().unwrap();
+        //
+        term.clear_screen()?;
         term.write_line(line_to_type)?;
         window
             .iter()
             .skip(1)
             .for_each(|line| term.write_line(line).unwrap_or_default());
+        //
         let line_resp = type_line(&line_to_type, &term, args.lines);
+        //
         match line_resp {
             Ok(a) => {
                 errors += a.errors;
@@ -153,6 +156,7 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics
                 Input::Backspace => {
                     line_iter = backspace(term, &analytics, line)?;
                 }
+                // Pressing enter in the middle of a line just counts as a mistake.
                 Input::Enter => {
                     analytics.borrow_mut().errors += 1;
                     analytics.borrow_mut().total_input_chars += 1;
@@ -160,9 +164,11 @@ fn type_line(line: &String, term: &Term, window_size: usize) -> Result<Analytics
                 Input::Esc => return Err(LineError::Esc(*analytics.borrow())),
             }
         } else {
-            // Handle an empty line.
+            // Handle an empty line. Or Line end.
             match user_input {
                 Input::Enter => {
+                    analytics.borrow_mut().total_input_chars += 1;
+                    analytics.borrow_mut().line_length += 1;
                     break;
                 }
                 Input::Backspace => {

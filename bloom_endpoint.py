@@ -1,3 +1,8 @@
+"""
+This is the starting point for the Bloom service. I wan't to spin bloom up used some 
+precomputed results, to make sure that there is enought time load the model and begin,
+inference.
+"""
 from time import time
 
 import torch

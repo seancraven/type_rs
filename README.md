@@ -7,6 +7,9 @@ Goal, have a generative model backend that makes semantically sensible text to p
 - [x] Simple typing app.
 - [x] Simple analytics
 - [ ] BLOOM for text generation.
+ - [ ] BLOOM server is starting to go
+ - [ ] Need to decide on some messageing protocall.
+ - [ ] Need to implement client once I have implemented the server.
 # Todo:
 
 

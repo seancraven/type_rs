@@ -1,5 +1,0 @@
-DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): huggingface.co:443
-DEBUG:urllib3.connectionpool:https://huggingface.co:443 "HEAD /bigscience/bloom-560m/resolve/main/tokenizer_config.json HTTP/1.1" 200 0
-DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): huggingface.co:443
-DEBUG:urllib3.connectionpool:https://huggingface.co:443 "HEAD /bigscience/bloom-560m/resolve/main/config.json HTTP/1.1" 200 0
-DEBUG:root:Evaluation time of __init__: 4.654246807098389

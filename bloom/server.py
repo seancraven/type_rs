@@ -1,15 +1,16 @@
 import logging
 import socket
 from functools import wraps
-from time import sleep
-from time import time
+from time import sleep, time
 from typing import Generator
 
 import torch
-from transformers import AutoModelForCausalLM
-from transformers import AutoTokenizer
-from transformers import BloomForCausalLM
-from transformers import BloomTokenizerFast
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BloomForCausalLM,
+    BloomTokenizerFast,
+)
 
 
 def log_time(
